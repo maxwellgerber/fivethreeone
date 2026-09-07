@@ -1,8 +1,10 @@
 import { LIFTS, LIFT_NAMES, foreverPhases, phaseLabel, simplePhases, positionFromFlatWeek, suggestTm, totalWeeks, type Lift, type Phase, type Position } from '../engine.ts';
 import { parseNotes } from '../notesImport.ts';
 import { bestE1rmPerLift } from '../stats.ts';
+import { sortWorkouts } from '../merge.ts';
 import { exportJson, freshState, importJson } from '../store.ts';
-import { actions, changes, closeSheet, commit, ctx, fmtW, h, openSheet, registerScreen, shareOrDownload, toast } from './core.ts';
+import { syncNow, syncStatus } from '../sync.ts';
+import { actions, changes, closeSheet, commit, ctx, fmtDate, fmtW, h, openSheet, registerScreen, shareOrDownload, toast } from './core.ts';
 
 function numField(label: string, key: string, value: number, step = 1, hint = ''): string {
   return `<div class="field"><label>${h(label)}${hint ? `<span class="hint">${h(hint)}</span>` : ''}</label>
@@ -176,10 +178,31 @@ changes['plates'] = (el) => commit((s) => {
   if (v.length) s.settings.plates = v.sort((a, b) => b - a);
 });
 
+function syncLine(): string {
+  const st = syncStatus();
+  const ago = (t: number) => {
+    const s = Math.round((Date.now() - t) / 1000);
+    return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : fmtDate(new Date(t).toISOString().slice(0, 10));
+  };
+  let text: string;
+  switch (st.phase) {
+    case 'disabled': text = 'Sync off · this preview is not served by the Worker, so data stays on this device.'; break;
+    case 'syncing': text = 'Syncing…'; break;
+    case 'offline': text = `Offline${st.dirty ? ' · changes will sync when you are back online' : ''}.`; break;
+    case 'error': text = `Sync problem: ${st.error ?? 'unknown'}.`; break;
+    default: text = st.dirty ? 'Changes pending…' : st.lastSyncAt ? `Synced with your account ${ago(st.lastSyncAt)}.` : 'Sync ready.';
+  }
+  const btn = st.phase === 'disabled' ? '' : ` <a href="#" data-action="sync-now">Sync now</a>`;
+  return `<div class="muted small" id="sync-status">${h(text)}${btn}</div>`;
+}
+actions['sync-now'] = (el, ev) => { ev.preventDefault(); void syncNow().then(() => { const st = syncStatus(); if (st.phase === 'idle') toast('Synced'); }); };
+
 function dataCard(): string {
   const n = ctx.state.workouts.length;
+  const synced = syncStatus().phase !== 'disabled';
   return `<div class="card"><h3>Your data</h3>
-    <div class="muted small">${n} sessions stored on this device only. Export regularly — a backup is a JSON file you can re-import anywhere.</div>
+    <div class="muted small">${n} sessions${synced ? ', synced across your devices through your account.' : ' stored on this device only.'} Export regularly — a backup is a JSON file you can re-import anywhere.</div>
+    ${syncLine()}
     <div class="row wrap mt">
       <button type="button" class="btn" data-action="export-json">Export backup</button>
       <button type="button" class="btn" data-action="import-json">Import backup</button>
@@ -236,19 +259,25 @@ actions['import-notes-do'] = () => {
   closeSheet();
   commit((s) => {
     const keys = new Set(s.workouts.map((w) => `${w.date}|${w.raw ?? ''}`));
-    for (const w of res.workouts) if (!keys.has(`${w.date}|${w.raw ?? ''}`)) s.workouts.push(w);
-    s.workouts.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const now = Date.now();
+    for (const w of res.workouts) if (!keys.has(`${w.date}|${w.raw ?? ''}`)) s.workouts.push({ ...w, updatedAt: now });
+    sortWorkouts(s.workouts);
   });
   toast(`Imported ${res.workouts.length} sessions${res.warnings.length ? ` · ${res.warnings.length} warnings` : ''}`);
 };
 actions['reset-all'] = () => {
-  openSheet(`<h2>Erase everything?</h2><div class="note">Program, settings and all ${ctx.state.workouts.length} sessions on this device. Export a backup first.</div>
+  const where = syncStatus().phase === 'disabled' ? 'on this device' : 'on every device signed in to your account';
+  openSheet(`<h2>Erase everything?</h2><div class="note">Program, settings and all ${ctx.state.workouts.length} sessions ${where}. Export a backup first.</div>
     <div class="actions"><button type="button" class="btn" data-action="sheet-close">Cancel</button><button type="button" class="btn danger" data-action="reset-confirm">Erase</button></div>`);
 };
 actions['reset-confirm'] = () => {
   closeSheet();
+  const now = Date.now();
+  const tombstones = { ...(ctx.state.tombstones ?? {}) };
+  for (const w of ctx.state.workouts) tombstones[w.id] = now;
   ctx.state = freshState();
   ctx.state.workouts = [];
+  ctx.state.tombstones = tombstones;
   commit();
 };
 

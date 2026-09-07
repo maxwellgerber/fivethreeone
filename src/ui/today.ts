@@ -1,4 +1,5 @@
 import { LIFT_NAMES, bumpTms, e1rm, nextPosition, planWorkout, platesPerSide, prevPosition, roundWeight, type Lift } from '../engine.ts';
+import { sortWorkouts } from '../merge.ts';
 import { todayISO, uid, type ExerciseEntry, type LoggedSet, type Workout } from '../model.ts';
 import { bestE1rmPerLift, isRepPr, lastSessionFor } from '../stats.ts';
 import { actions, changes, closeSheet, commit, ctx, fmtDate, fmtW, h, keepAwake, openSheet, registerScreen, startTimer, stopTimer, toast } from './core.ts';
@@ -380,8 +381,9 @@ actions['finish-confirm'] = () => {
     }
     w.notes = notes || undefined;
     w.finishedAt = Date.now();
+    w.updatedAt = w.finishedAt;
     s.workouts.unshift(w);
-    s.workouts.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    sortWorkouts(s.workouts);
     s.active = null;
     const r = nextPosition(s.program, s.position);
     s.position = r.pos;

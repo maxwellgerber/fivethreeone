@@ -1,6 +1,6 @@
 // Offline-first service worker: cache the app shell, network-first for updates.
 // Auth routes are never intercepted; only successful same-origin responses are cached.
-const CACHE = 'fto-v2';
+const CACHE = 'fto-v3';
 const ASSETS = ['./', './index.html', './app.js', './app.css', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS).catch(() => {})).then(() => self.skipWaiting()));
@@ -12,7 +12,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
   if (e.request.method !== 'GET') return;
-  if (/^\/(login|logout|whoami)$/.test(url.pathname)) return;
+  if (/^\/(login|logout|whoami)$/.test(url.pathname) || url.pathname.startsWith('/api/')) return;
   e.respondWith(
     fetch(e.request).then((res) => {
       if (res.ok && res.type === 'basic') {

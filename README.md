@@ -1,6 +1,6 @@
 # Five Three One
 
-A 5/3/1 Forever training log that runs as an installable web app on your phone. No accounts, no subscription, no server: everything lives in your browser's storage, and you can export a JSON backup any time.
+A 5/3/1 Forever training log that runs as an installable web app on your phone. Everything lives in your browser's storage and works offline; behind the Cloudflare Worker it also syncs between your devices, and you can export a JSON backup any time.
 
 ## What it does
 
@@ -9,13 +9,14 @@ A 5/3/1 Forever training log that runs as an installable web app on your phone. 
 - Assistance tracked against the phase's push / pull / single-leg-core rep targets.
 - History with edit-as-text in the same shorthand as a notebook (`Squat 225x5, 175x5x5`), rep PRs, e1RM chart per lift, weekly tonnage.
 - Import: paste freeform notes (years are inferred from date order) or restore a JSON backup.
+- Sync: when served by the Worker, every change is pushed to a per-user KV document and pulled on launch and when the app returns to the foreground. Conflicts merge per workout (newest edit wins, deletes are tombstoned); program and settings are last-writer-wins. Status and a "Sync now" link live under Program → Your data.
 
 ## Develop
 
 ```
 npm install          # esbuild + typescript
-npm test             # engine + importer tests (node --test)
-npm run typecheck
+npm test             # engine, importer and sync-merge tests (node --test)
+npm run typecheck    # app + worker
 npm run build        # -> dist/
 npm run build:seeded # also embeds public-history.json and writes dist/single.html
 npm run serve        # preview on http://localhost:3000
@@ -34,13 +35,35 @@ The Worker in `worker/index.ts` serves `dist/` as static assets and gates everyt
 ```
 npm install
 npx wrangler login
+npx wrangler kv namespace create SYNC    # paste the id into wrangler.toml [[kv_namespaces]]
 npx wrangler secret put AUTH_PASS        # maxwell1234 for now
 npx wrangler secret put SESSION_SECRET   # openssl rand -hex 32
 npm run deploy                           # builds dist/ then wrangler deploy
 ```
 
+### Sync API
+
+`worker/index.ts` exposes one document per signed-in user in the `SYNC` KV namespace:
+
+| Route | Behaviour |
+| --- | --- |
+| `GET /api/state` | `{ rev, updatedAt, state }`, or 404 `{ rev: 0 }` before the first push |
+| `PUT /api/state` | body `{ baseRev, state }`; 200 `{ rev }` on success, 409 with the current document if `baseRev` is stale |
+| `DELETE /api/state` | wipe the server copy |
+
+The client (`src/sync.ts`) merges a 409 with `src/merge.ts` and retries, so two devices editing at once converge without losing either side's work.
+
+## CI/CD
+
+`.github/workflows/ci.yml` runs tests, typechecks and the build on every push and pull request. Pushes to `main` then deploy with `wrangler deploy`; that job needs two repository secrets (Settings → Secrets → Actions), ideally scoped to a `production` environment:
+
+- `CLOUDFLARE_API_TOKEN`: an API token with the "Edit Cloudflare Workers" template plus Workers KV Storage: Edit.
+- `CLOUDFLARE_ACCOUNT_ID`: from the Workers overview page in the dashboard.
+
+The deploy also needs the real KV namespace id in `wrangler.toml`; `wrangler dev` runs fine against the placeholder.
+
 `AUTH_USER` lives in `wrangler.toml` (`maxwell`). For local dev, `.dev.vars` holds the two secrets and `npm run dev` runs the Worker at http://localhost:8787.
 
 Then open the workers.dev URL (or a custom domain) in Safari on iOS, sign in, Share → Add to Home Screen. The service worker makes it work offline after the first load; `/login`, `/logout` and `/whoami` are never cached.
 
-Data is stored in IndexedDB for the origin you load it from, so keep one URL. Export a backup from Program → Your data before moving hosts. (A sync layer via KV/D1 is the obvious next step now that there's a Worker in front.)
+Data is stored in IndexedDB for the origin you load it from and mirrored to KV through the Worker, so a fresh device picks up your history after signing in. Export a backup from Program → Your data before moving hosts.

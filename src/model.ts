@@ -38,6 +38,8 @@ export interface Workout {
   /** Epoch ms when the workout was finished in the app. */
   finishedAt?: number;
   startedAt?: number;
+  /** Epoch ms of the last edit; used to resolve sync conflicts per workout. */
+  updatedAt?: number;
 }
 
 export interface AssistanceExercise {
@@ -64,6 +66,10 @@ export interface AppState {
   settings: Settings;
   assistance: AssistanceExercise[];
   onboarded: boolean;
+  /** Epoch ms of the last change to anything outside `workouts` (sync: last writer wins). */
+  updatedAt?: number;
+  /** Deleted workout ids → epoch ms of deletion, so deletes survive a sync merge. */
+  tombstones?: Record<string, number>;
 }
 
 export function defaultSettings(units: 'lb' | 'kg'): Settings {

@@ -1,10 +1,20 @@
 import { defaultProgram, suggestTm, LIFTS, type Lift, type Position } from './engine.ts';
 import { defaultAssistance, defaultSettings, type AppState, type Workout } from './model.ts';
+import { sortWorkouts } from './merge.ts';
 import { bestE1rmPerLift } from './stats.ts';
+import { markDirty } from './sync.ts';
 
 const DB_NAME = 'fivethreeone';
 const STORE = 'kv';
 const KEY = 'state';
+const SYNC_KEY = 'sync';
+
+export interface SyncMeta {
+  /** Server revision the local state is based on (0 = never synced). */
+  rev: number;
+  /** Local changes not yet pushed. */
+  dirty: boolean;
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -84,31 +94,66 @@ export function freshState(): AppState {
     settings: defaultSettings('lb'),
     assistance: defaultAssistance(),
     onboarded: false,
+    updatedAt: Date.now(),
+    tombstones: {},
   };
+}
+
+/** Persist without touching sync (used by the sync layer itself). */
+export function persistState(state: AppState): Promise<void> {
+  noteState(state);
+  return idbSet(KEY, state);
+}
+
+export async function loadSyncMeta(): Promise<SyncMeta> {
+  return (await idbGet<SyncMeta>(SYNC_KEY)) ?? { rev: 0, dirty: false };
+}
+export function saveSyncMeta(meta: SyncMeta): Promise<void> {
+  return idbSet(SYNC_KEY, meta);
 }
 
 export async function loadState(): Promise<AppState> {
   const saved = await idbGet<AppState>(KEY);
+  let state: AppState;
   if (saved && saved.version === 1) {
     // Fill any fields added since the save was made.
     const fresh = freshState();
-    return {
+    state = {
       ...fresh,
       ...saved,
       settings: { ...fresh.settings, ...saved.settings },
       program: { ...fresh.program, ...saved.program },
       workouts: saved.workouts?.length ? saved.workouts : fresh.workouts,
     };
+  } else {
+    state = freshState();
   }
-  return freshState();
+  noteState(state);
+  return state;
+}
+
+/** Fingerprint of everything outside `workouts`/`tombstones`, to stamp `updatedAt` only on real changes. */
+function metaKey(s: AppState): string {
+  return JSON.stringify([s.program, s.position, s.settings, s.assistance, s.active, s.onboarded]);
+}
+let lastMetaKey = '';
+
+/** Remember the current non-workout fields so the next save can tell whether they changed. */
+export function noteState(state: AppState): void {
+  lastMetaKey = metaKey(state);
 }
 
 let pending: number | null = null;
 export function saveState(state: AppState): void {
+  const key = metaKey(state);
+  if (key !== lastMetaKey) {
+    state.updatedAt = Date.now();
+    lastMetaKey = key;
+  }
   if (pending !== null) clearTimeout(pending);
   pending = window.setTimeout(() => {
     pending = null;
-    void idbSet(KEY, state);
+    void idbSet(KEY, state).then(() => markDirty());
   }, 150);
 }
 
@@ -132,17 +177,23 @@ export function exportJson(state: AppState): string {
 export function importJson(state: AppState, text: string, mode: 'merge' | 'replace'): AppState {
   const data = JSON.parse(text) as Partial<AppState> & { workouts?: Workout[] };
   if (!Array.isArray(data.workouts)) throw new Error('No workouts found in that file.');
+  const now = Date.now();
   let workouts: Workout[];
+  const tombstones = { ...(state.tombstones ?? {}) };
   if (mode === 'replace') {
-    workouts = data.workouts;
+    const keep = new Set(data.workouts.map((w) => w.id));
+    for (const w of state.workouts) if (!keep.has(w.id)) tombstones[w.id] = now;
+    workouts = data.workouts.map((w) => ({ ...w, updatedAt: now }));
   } else {
     const ids = new Set(state.workouts.map((w) => w.id));
-    workouts = state.workouts.concat(data.workouts.filter((w) => !ids.has(w.id)));
+    workouts = state.workouts.concat(data.workouts.filter((w) => !ids.has(w.id)).map((w) => ({ ...w, updatedAt: now })));
   }
-  workouts.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  for (const w of workouts) delete tombstones[w.id];
+  sortWorkouts(workouts);
   return {
     ...state,
     workouts,
+    tombstones,
     program: mode === 'replace' && data.program ? { ...state.program, ...data.program } : state.program,
     position: mode === 'replace' && data.position ? (data.position as Position) : state.position,
     settings: mode === 'replace' && data.settings ? { ...state.settings, ...data.settings } : state.settings,

@@ -1,9 +1,17 @@
-// Cloudflare Worker: serves the built app from ./dist behind a cookie session.
+// Cloudflare Worker: serves the built app from ./dist behind a cookie session
+// and stores each user's app state in KV for sync between devices (/api/state).
 // Auth today: a single username/password from env vars. Swap `checkCredentials`
 // and the /login route for an OIDC flow later; everything else stays the same.
 
+interface KVNamespace {
+  get(key: string, type: 'text'): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
+  SYNC: KVNamespace;
   AUTH_USER: string;
   AUTH_PASS: string;
   SESSION_SECRET: string;
@@ -63,6 +71,54 @@ function getCookie(req: Request, name: string): string | undefined {
 
 function checkCredentials(env: Env, user: string, pass: string): boolean {
   return timingSafeEqual(user, env.AUTH_USER) && timingSafeEqual(pass, env.AUTH_PASS);
+}
+
+// ---- Sync API ----------------------------------------------------------------
+// One JSON document per user: { rev, updatedAt, state }. Writers send the rev they
+// last saw; a mismatch returns 409 with the current document so the client can
+// merge and retry. KV is eventually consistent, which is fine for one person
+// switching between a phone and a laptop.
+
+interface StoredDoc { rev: number; updatedAt: number; state: unknown }
+const MAX_STATE_BYTES = 8 * 1024 * 1024;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
+async function readDoc(env: Env, user: string): Promise<StoredDoc | null> {
+  const raw = await env.SYNC.get(`state:${user}`, 'text');
+  return raw ? (JSON.parse(raw) as StoredDoc) : null;
+}
+
+async function handleSync(request: Request, env: Env, user: string): Promise<Response> {
+  if (!env.SYNC) return json({ error: 'sync not configured' }, 503);
+  if (request.method === 'GET') {
+    const doc = await readDoc(env, user);
+    return doc ? json(doc) : json({ rev: 0 }, 404);
+  }
+  if (request.method === 'PUT') {
+    const len = Number(request.headers.get('Content-Length') ?? '0');
+    if (len > MAX_STATE_BYTES) return json({ error: 'too large' }, 413);
+    let body: { baseRev?: unknown; state?: unknown };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json({ error: 'bad json' }, 400);
+    }
+    if (typeof body.baseRev !== 'number' || !body.state || typeof body.state !== 'object') return json({ error: 'expected { baseRev, state }' }, 400);
+    const cur = await readDoc(env, user);
+    const curRev = cur?.rev ?? 0;
+    if (body.baseRev !== curRev) return json(cur ?? { rev: 0 }, 409);
+    const doc: StoredDoc = { rev: curRev + 1, updatedAt: Date.now(), state: body.state };
+    await env.SYNC.put(`state:${user}`, JSON.stringify(doc));
+    return json({ rev: doc.rev, updatedAt: doc.updatedAt });
+  }
+  if (request.method === 'DELETE') {
+    await env.SYNC.delete(`state:${user}`);
+    return json({ rev: 0 });
+  }
+  return json({ error: 'method not allowed' }, 405);
 }
 
 function loginPage(error = ''): Response {
@@ -126,6 +182,9 @@ export default {
       if (isNav) return new Response(null, { status: 302, headers: { Location: '/login', 'Cache-Control': 'no-store' } });
       return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     }
+
+    if (url.pathname === '/api/state') return handleSync(request, env, user);
+    if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
 
     if (url.pathname === '/whoami') {
       return new Response(JSON.stringify({ user }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });

@@ -1,4 +1,5 @@
 import { e1rm } from '../engine.ts';
+import { sortWorkouts } from '../merge.ts';
 import { todayISO, uid, type LoggedSet, type Workout } from '../model.ts';
 import { parseNotes } from '../notesImport.ts';
 import { actions, closeSheet, commit, ctx, fmtDate, fmtW, h, openSheet, registerScreen, toast } from './core.ts';
@@ -105,7 +106,11 @@ actions['hist-delete'] = (el) => {
 actions['hist-delete-confirm'] = (el) => {
   closeSheet();
   delete ctx.view.histId;
-  commit((s) => { s.workouts = s.workouts.filter((w) => w.id !== el.dataset.id); });
+  commit((s) => {
+    const id = el.dataset.id!;
+    s.workouts = s.workouts.filter((w) => w.id !== id);
+    (s.tombstones ??= {})[id] = Date.now();
+  });
 };
 
 function textEditorSheet(title: string, date: string, text: string, id?: string): void {
@@ -138,8 +143,9 @@ actions['hist-save-text'] = (el) => {
     w.entries = parsed.entries;
     w.notes = parsed.notes;
     w.dateUncertain = undefined;
+    w.updatedAt = Date.now();
     if (!existing) s.workouts.push(w);
-    s.workouts.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    sortWorkouts(s.workouts);
     ctx.view.histId = w.id;
   });
   if (res.warnings.length) toast(res.warnings[0].message);
