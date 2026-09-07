@@ -56,10 +56,12 @@ The Worker in `worker/index.ts` serves `dist/` as static assets and gates everyt
 npm install
 npx wrangler login
 npx wrangler kv namespace create SYNC    # paste the id into wrangler.toml [[kv_namespaces]]
-npx wrangler secret put AUTH_PASS        # maxwell1234 for now
+npx wrangler secret put AUTH_PASS        # the login password
 npx wrangler secret put SESSION_SECRET   # openssl rand -hex 32
 npm run deploy                           # builds dist/ then wrangler deploy
 ```
+
+Until both secrets exist the deployed Worker answers every request with a plain-text 503 that names what is missing. Secrets survive redeploys, so this is a one-time step per Worker.
 
 ### Sync API
 

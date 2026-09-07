@@ -73,6 +73,20 @@ function checkCredentials(env: Env, user: string, pass: string): boolean {
   return timingSafeEqual(user, env.AUTH_USER) && timingSafeEqual(pass, env.AUTH_PASS);
 }
 
+/** Names of the required bindings that are missing, so misconfiguration is a clear page, not a 1101. */
+function missingConfig(env: Env): string[] {
+  const out: string[] = [];
+  if (!env.AUTH_USER) out.push('AUTH_USER (wrangler.toml [vars])');
+  if (!env.AUTH_PASS) out.push('AUTH_PASS (npx wrangler secret put AUTH_PASS)');
+  if (!env.SESSION_SECRET) out.push('SESSION_SECRET (npx wrangler secret put SESSION_SECRET)');
+  return out;
+}
+
+function configErrorPage(missing: string[]): Response {
+  const body = `Five Three One is deployed but not configured yet. Missing:\n\n  ${missing.join('\n  ')}\n\nSet them, then reload.`;
+  return new Response(body, { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
 // ---- Sync API ----------------------------------------------------------------
 // One JSON document per user: { rev, updatedAt, state }. Writers send the rev they
 // last saw; a mismatch returns 409 with the current document so the client can
@@ -150,51 +164,62 @@ button{min-height:52px;border:0;border-radius:10px;background:#4d8be6;color:#0d1
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const secure = url.protocol === 'https:';
-    const cookieAttrs = `Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
-
-    if (url.pathname === '/login') {
-      if (request.method === 'GET') return loginPage();
-      if (request.method === 'POST') {
-        const form = await request.formData();
-        const user = String(form.get('username') ?? '');
-        const pass = String(form.get('password') ?? '');
-        if (!checkCredentials(env, user, pass)) return loginPage('Wrong username or password.');
-        const days = Number(env.SESSION_DAYS ?? '30');
-        const token = await makeSession(env, user);
-        return new Response(null, {
-          status: 303,
-          headers: { Location: '/', 'Set-Cookie': `${COOKIE}=${token}; Max-Age=${days * 86400}; ${cookieAttrs}` },
-        });
-      }
-      return new Response('Method not allowed', { status: 405 });
+    const missing = missingConfig(env);
+    if (missing.length) return configErrorPage(missing);
+    try {
+      return await handle(request, env);
+    } catch (e) {
+      console.error('unhandled', e);
+      return new Response(`Something went wrong: ${(e as Error).message}`, { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
-    if (url.pathname === '/logout') {
-      return new Response(null, { status: 303, headers: { Location: '/login', 'Set-Cookie': `${COOKIE}=; Max-Age=0; ${cookieAttrs}` } });
-    }
-
-    const user = await verifySession(env, getCookie(request, COOKIE));
-    if (!user) {
-      // The service worker and manifest fetch without credentials prompts; send them to login too,
-      // but as a JSON 401 for non-navigation requests so the app can react.
-      const isNav = request.headers.get('Sec-Fetch-Mode') === 'navigate' || request.headers.get('Accept')?.includes('text/html');
-      if (isNav) return new Response(null, { status: 302, headers: { Location: '/login', 'Cache-Control': 'no-store' } });
-      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
-    }
-
-    if (url.pathname === '/api/state') return handleSync(request, env, user);
-    if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
-
-    if (url.pathname === '/whoami') {
-      return new Response(JSON.stringify({ user }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
-    }
-
-    const res = await env.ASSETS.fetch(request);
-    const headers = new Headers(res.headers);
-    headers.set('X-Frame-Options', 'DENY');
-    headers.set('Referrer-Policy', 'same-origin');
-    if (url.pathname.endsWith('/sw.js')) headers.set('Cache-Control', 'no-cache');
-    return new Response(res.body, { status: res.status, headers });
   },
 };
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const secure = url.protocol === 'https:';
+  const cookieAttrs = `Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+
+  if (url.pathname === '/login') {
+    if (request.method === 'GET') return loginPage();
+    if (request.method === 'POST') {
+      const form = await request.formData();
+      const user = String(form.get('username') ?? '');
+      const pass = String(form.get('password') ?? '');
+      if (!checkCredentials(env, user, pass)) return loginPage('Wrong username or password.');
+      const days = Number(env.SESSION_DAYS ?? '30');
+      const token = await makeSession(env, user);
+      return new Response(null, {
+        status: 303,
+        headers: { Location: '/', 'Set-Cookie': `${COOKIE}=${token}; Max-Age=${days * 86400}; ${cookieAttrs}` },
+      });
+    }
+    return new Response('Method not allowed', { status: 405 });
+  }
+  if (url.pathname === '/logout') {
+    return new Response(null, { status: 303, headers: { Location: '/login', 'Set-Cookie': `${COOKIE}=; Max-Age=0; ${cookieAttrs}` } });
+  }
+
+  const user = await verifySession(env, getCookie(request, COOKIE));
+  if (!user) {
+    // The service worker and manifest fetch without credentials prompts; send them to login too,
+    // but as a JSON 401 for non-navigation requests so the app can react.
+    const isNav = request.headers.get('Sec-Fetch-Mode') === 'navigate' || request.headers.get('Accept')?.includes('text/html');
+    if (isNav) return new Response(null, { status: 302, headers: { Location: '/login', 'Cache-Control': 'no-store' } });
+    return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  }
+
+  if (url.pathname === '/api/state') return handleSync(request, env, user);
+  if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
+
+  if (url.pathname === '/whoami') {
+    return new Response(JSON.stringify({ user }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  }
+
+  const res = await env.ASSETS.fetch(request);
+  const headers = new Headers(res.headers);
+  headers.set('X-Frame-Options', 'DENY');
+  headers.set('Referrer-Policy', 'same-origin');
+  if (url.pathname.endsWith('/sw.js')) headers.set('Cache-Control', 'no-cache');
+  return new Response(res.body, { status: res.status, headers });
+}
