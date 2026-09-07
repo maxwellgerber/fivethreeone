@@ -13,7 +13,7 @@ run_worker_first = true
 # and paste the id it prints below. `wrangler dev` uses a local emulation.
 [[kv_namespaces]]
 binding = "SYNC"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "01bb64f4e8e245bc94204c32e7dc5819"
 
 [vars]
 AUTH_USER = "maxwell"
