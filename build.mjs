@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node
 
 const single = process.argv.includes('--single'); // one self-contained HTML file (for previews)
 mkdirSync('dist', { recursive: true });
-await build({ entryPoints: ['src/main.ts'], bundle: true, minify: true, format: 'iife', target: ['es2020', 'safari15'], outfile: 'dist/app.js', logLevel: 'error' });
+await build({ entryPoints: ['src/main.tsx'], bundle: true, minify: true, format: 'iife', jsx: 'automatic', target: ['es2020', 'safari15'], outfile: 'dist/app.js', logLevel: 'error' });
 cpSync('public', 'dist', { recursive: true });
 cpSync('src/style.css', 'dist/app.css');
 

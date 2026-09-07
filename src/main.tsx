@@ -1,20 +1,19 @@
-import './ui/today.ts';
-import './ui/history.ts';
-import './ui/progress.ts';
-import './ui/program.ts';
-import { bindEvents, ctx, render } from './ui/core.ts';
+import { createRoot } from 'react-dom/client';
+import { App } from './app/App.tsx';
+import { StoreProvider } from './app/store.tsx';
+import { SyncProvider } from './app/syncStatus.tsx';
 import { loadState } from './store.ts';
-import { initSync } from './sync.ts';
 
 async function boot(): Promise<void> {
-  ctx.state = await loadState();
-  bindEvents();
-  render();
-  void initSync({
-    getState: () => ctx.state,
-    setState: (next) => { ctx.state = next; render(); },
-    onStatus: () => { if (ctx.tab === 'program') render(); },
-  });
+  const initial = await loadState();
+  createRoot(document.getElementById('root')!).render(
+    <StoreProvider initial={initial}>
+      <SyncProvider>
+        <App />
+      </SyncProvider>
+    </StoreProvider>,
+  );
+
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !location.hostname.endsWith('claude.ai')) {
     // Kick the session so an expired login redirects before the app is used offline-stale.
     void fetch('/whoami', { cache: 'no-store' }).then((r) => { if (r.status === 401) location.href = '/login'; }).catch(() => {});

@@ -6,10 +6,20 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx"
   },
-  "include": ["src", "tools"]
+  "include": [
+    "src",
+    "tools"
+  ]
 }

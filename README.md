@@ -13,8 +13,27 @@ A 5/3/1 Forever training log that runs as an installable web app on your phone. 
 
 ## Develop
 
+React 19 + TypeScript, bundled by esbuild (no framework CLI). Pure logic lives in plain modules and is unit-tested with Node's built-in runner; React only owns rendering and per-sheet UI state.
+
 ```
-npm install          # esbuild + typescript
+src/engine.ts        5/3/1 math: percentages, TM, e1RM, plates, phase/cycle/week/day position
+src/model.ts         types + defaults
+src/notesImport.ts   freeform notes -> workouts ("Squat 225x5, 175x5x5", years inferred)
+src/workoutText.ts   workouts -> notebook text, summaries
+src/stats.ts         PRs, e1RM series, tonnage
+src/store.ts         IndexedDB persistence, JSON export/import, seed history
+src/merge.ts         conflict-free merge of two app states (sync)
+src/sync.ts          sync client (pull on boot/foreground, debounced push, 409 -> merge -> retry)
+src/app/             React shell: store context (commit/replace), sheet, toast, rest timer, sync status, wake lock
+src/components/      Stepper, Field, NumInput
+src/screens/         Today, History, Progress, Program
+worker/index.ts      Cloudflare Worker: login, static assets, /api/state
+```
+
+State changes go through `commit(mutator)` from `useStore()`: the mutator runs on a structured clone, the result is persisted (debounced) and queued for sync.
+
+```
+npm install          # react, esbuild, typescript, wrangler
 npm test             # engine, importer and sync-merge tests (node --test)
 npm run typecheck    # app + worker
 npm run build        # -> dist/
