@@ -1,0 +1,17 @@
+name = "fivethreeone"
+main = "worker/index.ts"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[vars]
+AUTH_USER = "maxwell"
+SESSION_DAYS = "30"
+# AUTH_PASS and SESSION_SECRET are secrets:
+#   npx wrangler secret put AUTH_PASS        (maxwell1234 for now)
+#   npx wrangler secret put SESSION_SECRET   (any long random string, e.g. `openssl rand -hex 32`)
+# For local dev they live in .dev.vars (gitignored).
