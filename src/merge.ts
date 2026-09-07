@@ -5,6 +5,7 @@
 //   (falling back to `finishedAt`, then 0) wins; ties keep the local copy.
 // - Deletions are tombstones (`tombstones[id] = epoch ms`). A tombstone beats a
 //   workout unless the workout was updated after the tombstone was written.
+//   Tombstones expire after a year so the map cannot grow without bound.
 // - Everything else (program, position, settings, assistance, active session,
 //   onboarded) is last-writer-wins by the snapshot's `updatedAt`.
 import type { AppState, Workout } from './model.ts';
@@ -17,9 +18,13 @@ export function sortWorkouts(ws: Workout[]): Workout[] {
   return ws.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : workoutStamp(b) - workoutStamp(a)));
 }
 
-export function mergeStates(local: AppState, remote: AppState): AppState {
+/** Tombstones older than this are dropped; a device offline longer than that may resurrect a deleted session. */
+export const TOMBSTONE_TTL_MS = 365 * 86400e3;
+
+export function mergeStates(local: AppState, remote: AppState, now = Date.now()): AppState {
   const tombstones: Record<string, number> = { ...(remote.tombstones ?? {}) };
   for (const [id, ts] of Object.entries(local.tombstones ?? {})) tombstones[id] = Math.max(ts, tombstones[id] ?? 0);
+  for (const [id, ts] of Object.entries(tombstones)) if (now - ts > TOMBSTONE_TTL_MS) delete tombstones[id];
 
   const byId = new Map<string, Workout>();
   for (const w of remote.workouts) byId.set(w.id, w);
@@ -37,7 +42,8 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   sortWorkouts(workouts);
 
   const newest = (remote.updatedAt ?? 0) > (local.updatedAt ?? 0) ? remote : local;
-  return {
+  const updatedAt = local.updatedAt === undefined && remote.updatedAt === undefined ? undefined : Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0);
+  const out: AppState = {
     version: 1,
     program: newest.program,
     position: newest.position,
@@ -45,13 +51,24 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     assistance: newest.assistance,
     active: newest.active,
     onboarded: local.onboarded || remote.onboarded,
-    updatedAt: Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0),
     workouts,
-    tombstones,
   };
+  if (updatedAt !== undefined) out.updatedAt = updatedAt;
+  if (Object.keys(tombstones).length || local.tombstones || remote.tombstones) out.tombstones = tombstones;
+  return out;
 }
 
-/** Cheap structural equality for "did the merge change anything" checks. */
+/** Structural equality, independent of key order (states round-trip through JSON and merges). */
 export function sameState(a: AppState, b: AppState): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return canonical(a) === canonical(b);
+}
+
+function canonical(v: unknown): string {
+  return JSON.stringify(v, (_k, val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const o = val as Record<string, unknown>;
+      return Object.keys(o).sort().reduce<Record<string, unknown>>((acc, k) => { if (o[k] !== undefined) acc[k] = o[k]; return acc; }, {});
+    }
+    return val;
+  });
 }

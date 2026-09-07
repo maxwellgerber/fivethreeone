@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   foreverPhases, roundWeight, e1rm, suggestTm, platesPerSide, planWorkout, planLift, defaultProgram,
-  nextPosition, prevPosition, flatWeek, positionFromFlatWeek, totalWeeks, bumpTms, type Position,
+  nextPosition, prevPosition, flatWeek, positionFromFlatWeek, totalWeeks, bumpTms, jokerSet, jokersAllowed, simplePhases, type Position,
 } from './engine.ts';
 
 test('roundWeight nearest and down', () => {
@@ -158,4 +158,30 @@ test('kg defaults round to 2.5', () => {
   const sq = planLift(cfg, { phase: 0, cycle: 0, week: 0, day: 0 }, 'squat');
   const main = sq.sets.filter((s) => s.kind === 'main');
   assert.ok(main.every((s) => Math.abs((s.weight / 2.5) - Math.round(s.weight / 2.5)) < 1e-9));
+});
+
+test('joker sets step 5% above the top set with the top set reps', () => {
+  const cfg = defaultProgram('lb');
+  cfg.tms.squat = 300;
+  const w1: Position = { phase: 0, cycle: 0, week: 0, day: 0 };
+  assert.deepEqual(jokerSet(cfg, w1, 'squat', 1), { kind: 'joker', pct: 0.9, weight: 270, reps: 5, amrap: false });
+  assert.deepEqual(jokerSet(cfg, w1, 'squat', 2), { kind: 'joker', pct: 0.95, weight: 285, reps: 5, amrap: false });
+  const w3: Position = { phase: 0, cycle: 0, week: 2, day: 0 };
+  assert.equal(jokerSet(cfg, w3, 'squat', 1).pct, 1);
+  assert.equal(jokerSet(cfg, w3, 'squat', 1).reps, 1);
+  assert.equal(jokerSet(cfg, w3, 'squat', 1).weight, 300);
+});
+
+test('jokersAllowed follows the phase flag and PR-set scheme', () => {
+  const cfg = defaultProgram('lb');
+  cfg.phases = simplePhases();
+  const pos: Position = { phase: 0, cycle: 0, week: 0, day: 0 };
+  assert.equal(jokersAllowed(cfg, pos), false);
+  cfg.phases[0].jokers = true;
+  assert.equal(jokersAllowed(cfg, pos), true);
+  cfg.phases[0].mainScheme = '5sPro';
+  assert.equal(jokersAllowed(cfg, pos), false);
+  cfg.phases = foreverPhases();
+  assert.equal(jokersAllowed(cfg, { phase: 2, cycle: 0, week: 1, day: 0 }), true);
+  assert.equal(jokersAllowed(cfg, { phase: 0, cycle: 0, week: 1, day: 0 }), false);
 });

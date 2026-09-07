@@ -292,6 +292,29 @@ export function planLift(cfg: ProgramConfig, pos: Position, lift: Lift): Planned
   return { lift, tm, sets };
 }
 
+/**
+ * Joker sets (5/3/1 Forever): after a strong PR set, optional heavier singles/triples/fives
+ * in 5% jumps above the week's top percentage, same reps as the top set. `n` is 1-based.
+ */
+export const JOKER_STEP = 0.05;
+export function jokerSet(cfg: ProgramConfig, pos: Position, lift: Lift, n: number): PlannedSet {
+  const top = WEEK_PCTS[pos.week][WEEK_PCTS[pos.week].length - 1];
+  const pct = +(top + JOKER_STEP * n).toFixed(4);
+  return {
+    kind: 'joker',
+    pct,
+    weight: roundWeight(cfg.tms[lift] * pct, cfg.roundTo, cfg.roundMode),
+    reps: PR_REPS[pos.week][PR_REPS[pos.week].length - 1],
+    amrap: false,
+  };
+}
+
+/** Whether the phase at `pos` allows joker sets. */
+export function jokersAllowed(cfg: ProgramConfig, pos: Position): boolean {
+  const phase = cfg.phases[pos.phase];
+  return !!phase && phase.kind !== 'seventh' && !!phase.jokers && phase.mainScheme === 'prSets';
+}
+
 export function phaseLabel(p: Phase): string {
   if (p.label) return p.label;
   if (p.kind === 'seventh') return p.seventh === 'tmTest' ? '7th Week · TM Test' : '7th Week · Deload';

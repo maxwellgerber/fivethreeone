@@ -5,6 +5,7 @@ A 5/3/1 Forever training log that runs as an installable web app on your phone. 
 ## What it does
 
 - Program engine for 5/3/1 Forever: leader/anchor phases, 5s PRO or PR sets, FSL / SSL / BBB supplemental, 7th-week deload or TM test, per-cycle TM increments, warm-ups, rounding, plate math.
+- Joker sets: when a phase allows them and the PR set hits its target, the lift offers a joker set (5% of TM above the top set, same reps), one at a time, with a way to remove it if it was a mistake.
 - Gym logging built for one thumb: tap a set to log it, PR/TM-test sets open a rep stepper with a "reps to beat your best e1RM" hint, a rest timer starts automatically (3:00 main / 1:30 supplemental / 1:00 assistance by default) with sound and vibration, and the screen stays awake.
 - Assistance tracked against the phase's push / pull / single-leg-core rep targets.
 - History with edit-as-text in the same shorthand as a notebook (`Squat 225x5, 175x5x5`), rep PRs, e1RM chart per lift, weekly tonnage.
@@ -22,8 +23,8 @@ src/notesImport.ts   freeform notes -> workouts ("Squat 225x5, 175x5x5", years i
 src/workoutText.ts   workouts -> notebook text, summaries
 src/stats.ts         PRs, e1RM series, tonnage
 src/store.ts         IndexedDB persistence, JSON export/import, seed history
-src/merge.ts         conflict-free merge of two app states (sync)
-src/sync.ts          sync client (pull on boot/foreground, debounced push, 409 -> merge -> retry)
+src/merge.ts         conflict-free merge of two app states (sync); tombstones expire after a year
+src/sync.ts          sync client (pull on boot/foreground, debounced push, 409 -> merge -> retry); createSyncClient(deps) is unit-tested with a fake server
 src/app/             React shell: store context (commit/replace), sheet, toast, rest timer, sync status, wake lock
 src/components/      Stepper, Field, NumInput
 src/screens/         Today, History, Progress, Program

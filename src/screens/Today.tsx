@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LIFT_NAMES, bumpTms, e1rm, nextPosition, planWorkout, platesPerSide, prevPosition, roundWeight, type Lift } from '../engine.ts';
+import { LIFT_NAMES, bumpTms, e1rm, jokerSet, jokersAllowed, nextPosition, planWorkout, platesPerSide, prevPosition, roundWeight, type Lift } from '../engine.ts';
 import { sortWorkouts } from '../merge.ts';
 import { todayISO, uid, type AppState, type ExerciseEntry, type LoggedSet, type Workout } from '../model.ts';
 import { bestE1rmPerLift, isRepPr, lastSessionFor } from '../stats.ts';
@@ -105,11 +105,35 @@ export function Today() {
 
 // ---- Main lifts ---------------------------------------------------------------
 
+/** Joker sets are offered once the PR set is done at or above target, while the phase allows them. */
+function jokerOffer(state: AppState, entry: ExerciseEntry): { n: number; insertAt: number } | null {
+  const w = state.active;
+  if (!w || !entry.lift) return null;
+  const pos = w.position ?? state.position;
+  if (!jokersAllowed(state.program, pos)) return null;
+  const pr = entry.sets.find((s) => s.kind === 'main' && s.amrap);
+  if (!pr || !pr.done || pr.skipped || (pr.reps ?? 0) < (pr.target ?? 0)) return null;
+  const jokers = entry.sets.filter((s) => s.kind === 'joker');
+  const lastJoker = jokers[jokers.length - 1];
+  if (lastJoker && !lastJoker.done) return null; // finish the current one first
+  let insertAt = entry.sets.length;
+  for (let i = entry.sets.length - 1; i >= 0; i--) if (entry.sets[i].kind === 'main' || entry.sets[i].kind === 'joker') { insertAt = i + 1; break; }
+  return { n: jokers.length + 1, insertAt };
+}
+
 function LiftBlock({ entry, ei, active, tm }: { entry: ExerciseEntry; ei: number; active: boolean; tm: number }) {
-  const { state } = useStore();
+  const { state, commit } = useStore();
   const lift = entry.lift!;
   const last = lastSessionFor(others(state), lift);
   const lastTop = last ? topSet(last, lift) : null;
+  const offer = active ? jokerOffer(state, entry) : null;
+  const addJoker = () => commit((s) => {
+    const w = s.active!;
+    const o = jokerOffer(s, w.entries[ei]);
+    if (!o) return;
+    const j = jokerSet(s.program, w.position ?? s.position, lift, o.n);
+    w.entries[ei].sets.splice(o.insertAt, 0, { weight: j.weight, reps: null, target: j.reps, kind: 'joker', pct: j.pct, done: false });
+  });
   return (
     <section className="lift">
       <div className="lift-head">
@@ -117,6 +141,14 @@ function LiftBlock({ entry, ei, active, tm }: { entry: ExerciseEntry; ei: number
         <span className="tm">TM <b>{fmtW(tm)}</b>{lastTop ? ` · last ${fmtW(lastTop.weight)}×${lastTop.reps}` : ''}</span>
       </div>
       <div className="sets">{entry.sets.map((s, si) => <SetRow key={si} ei={ei} si={si} set={s} active={active} />)}</div>
+      {offer && (
+        <div className="joker-offer">
+          <button type="button" className="btn small" data-action="joker-add" onClick={addJoker}>
+            + Joker set · {fmtW(jokerSet(state.program, state.active!.position ?? state.position, lift, offer.n).weight)}×{jokerSet(state.program, state.active!.position ?? state.position, lift, offer.n).reps}
+          </button>
+          <span className="muted small">Only if the PR set felt strong.</span>
+        </div>
+      )}
     </section>
   );
 }
@@ -218,6 +250,9 @@ function EditSetSheet({ ei, si }: { ei: number; si: number }) {
         <div className="note right">{reps > 0 && weight > 0 ? `e1RM ${Math.round(e1rm(weight, reps))}` : ''}</div>
       </div>
       <div className="actions">
+        {set.kind === 'joker' && (
+          <button type="button" className="btn danger full" onClick={() => { sheet.close(); commit((s) => { s.active!.entries[ei].sets.splice(si, 1); }); }}>Remove joker set</button>
+        )}
         <button type="button" className="btn" onClick={() => apply((t) => { t.done = false; t.reps = null; t.skipped = false; })}>Mark not done</button>
         <button type="button" className="btn danger" onClick={() => apply((t) => { t.skipped = !t.skipped; t.done = t.skipped; t.reps = t.skipped ? 0 : null; })}>{set.skipped ? 'Unskip' : 'Skip set'}</button>
         <button type="button" className="btn primary full" onClick={() => apply((t) => { t.weight = weight; t.reps = reps; t.done = true; t.skipped = false; })}>Save</button>

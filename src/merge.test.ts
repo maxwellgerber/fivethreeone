@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeStates } from './merge.ts';
+import { TOMBSTONE_TTL_MS, mergeStates, sameState } from './merge.ts';
 import { defaultAssistance, defaultSettings, type AppState, type Workout } from './model.ts';
 import { defaultProgram } from './engine.ts';
 
@@ -42,17 +42,19 @@ test('finishedAt is used as a stamp when updatedAt is absent', () => {
   assert.equal(mergeStates(local, remote).workouts[0].notes, 'edited');
 });
 
+const T = Date.now();
+
 test('tombstones remove workouts on the other side and are kept', () => {
-  const local = base({ tombstones: { a: 500 } });
-  const remote = base({ workouts: [w('a', '2026-09-01', { updatedAt: 100 }), w('b', '2026-09-02')] });
+  const local = base({ tombstones: { a: T - 500 } });
+  const remote = base({ workouts: [w('a', '2026-09-01', { updatedAt: T - 900 }), w('b', '2026-09-02')] });
   const m = mergeStates(local, remote);
   assert.deepEqual(m.workouts.map((x) => x.id), ['b']);
-  assert.deepEqual(m.tombstones, { a: 500 });
+  assert.deepEqual(m.tombstones, { a: T - 500 });
 });
 
 test('an edit after the tombstone resurrects the workout and clears the tombstone', () => {
-  const local = base({ tombstones: { a: 500 } });
-  const remote = base({ workouts: [w('a', '2026-09-01', { updatedAt: 600 })] });
+  const local = base({ tombstones: { a: T - 500 } });
+  const remote = base({ workouts: [w('a', '2026-09-01', { updatedAt: T - 400 })] });
   const m = mergeStates(local, remote);
   assert.deepEqual(m.workouts.map((x) => x.id), ['a']);
   assert.deepEqual(m.tombstones, {});
@@ -76,11 +78,31 @@ test('program, position, settings and active follow the newer snapshot', () => {
 });
 
 test('merge is idempotent and commutative on workouts', () => {
-  const a = base({ updatedAt: 1, workouts: [w('x', '2026-09-01', { updatedAt: 5 }), w('y', '2026-08-01')], tombstones: { z: 9 } });
+  const a = base({ updatedAt: 1, workouts: [w('x', '2026-09-01', { updatedAt: 5 }), w('y', '2026-08-01')], tombstones: { z: T } });
   const b = base({ updatedAt: 2, workouts: [w('x', '2026-09-01', { updatedAt: 7 }), w('z', '2026-07-01')] });
   const ab = mergeStates(a, b);
   const ba = mergeStates(b, a);
   assert.deepEqual(ab.workouts, ba.workouts);
   assert.deepEqual(mergeStates(ab, b).workouts, ab.workouts);
   assert.deepEqual(ab.workouts.map((x) => [x.id, x.updatedAt]), [['x', 7], ['y', undefined]]);
+});
+
+test('sameState ignores key order and undefined fields', () => {
+  const a = base({ workouts: [w('a', '2026-09-01', { notes: undefined })] });
+  const b = JSON.parse(JSON.stringify(a)) as AppState;
+  const { workouts, ...rest } = b;
+  const reordered = { workouts, ...rest } as AppState;
+  assert.equal(sameState(a, reordered), true);
+  assert.equal(sameState(mergeStates(a, b), b), true, 'merging identical states is a no-op');
+  reordered.workouts[0].notes = 'x';
+  assert.equal(sameState(a, reordered), false);
+});
+
+test('tombstones expire after the TTL', () => {
+  const now = 10_000_000_000_000;
+  const old = now - TOMBSTONE_TTL_MS - 1;
+  const fresh = now - 1000;
+  const local = base({ tombstones: { old, fresh } });
+  const m = mergeStates(local, base(), now);
+  assert.deepEqual(m.tombstones, { fresh });
 });

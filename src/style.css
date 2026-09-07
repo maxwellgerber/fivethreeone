@@ -280,6 +280,8 @@ table.prs .w { font-family: var(--display); font-size: 21px; font-weight: 600; }
 .day-chips button { border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); padding: 6px 12px; font-weight: 600; min-height: 36px; }
 .day-chips button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .pos-nav { display: flex; gap: 8px; align-items: center; }
+.joker-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+.set.joker .stripe { background: var(--pr); }
 .pos-nav button { min-width: 44px; }
 
 @media (prefers-reduced-motion: no-preference) {
