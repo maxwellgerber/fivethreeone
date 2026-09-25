@@ -4,6 +4,7 @@ import { sortWorkouts } from '../merge.ts';
 import { todayISO, uid, type AppState, type ExerciseEntry, type LoggedSet, type Workout } from '../model.ts';
 import { bestE1rmPerLift, isRepPr, lastSessionFor } from '../stats.ts';
 import { suggestAssistance, type Suggestion } from '../assist.ts';
+import { CUES } from '../cues.ts';
 import { fmtDate, fmtW } from '../format.ts';
 import { topSet } from '../workoutText.ts';
 import { useSheet } from '../app/sheet.tsx';
@@ -122,8 +123,29 @@ function jokerOffer(state: AppState, entry: ExerciseEntry): { n: number; insertA
   return { n: jokers.length + 1, insertAt };
 }
 
+function CuesSheet({ lift }: { lift: Lift }) {
+  const sheet = useSheet();
+  const c = CUES[lift];
+  const list = (title: string, items: string[]) => (
+    <div className="cues">
+      <div className="eyebrow">{title}</div>
+      <ul>{items.map((t) => <li key={t}>{t}</li>)}</ul>
+    </div>
+  );
+  return (
+    <>
+      <h2>{LIFT_NAMES[lift]} cues</h2>
+      {list('Setup', c.setup)}
+      {list('Execute', c.execute)}
+      {list('Watch for', c.watch)}
+      <div className="actions"><button type="button" className="btn primary full" onClick={sheet.close}>Got it</button></div>
+    </>
+  );
+}
+
 function LiftBlock({ entry, ei, active, tm }: { entry: ExerciseEntry; ei: number; active: boolean; tm: number }) {
   const { state, commit } = useStore();
+  const sheet = useSheet();
   const lift = entry.lift!;
   const last = lastSessionFor(others(state), lift);
   const lastTop = last ? topSet(last, lift) : null;
@@ -138,7 +160,7 @@ function LiftBlock({ entry, ei, active, tm }: { entry: ExerciseEntry; ei: number
   return (
     <section className="lift">
       <div className="lift-head">
-        <h2>{LIFT_NAMES[lift]}</h2>
+        <h2>{LIFT_NAMES[lift]}<button type="button" className="cue-btn" data-action="cues" aria-label={`${LIFT_NAMES[lift]} cues`} onClick={() => sheet.open(<CuesSheet lift={lift} />)}>?</button></h2>
         <span className="tm">TM <b>{fmtW(tm)}</b>{lastTop ? ` · last ${fmtW(lastTop.weight)}×${lastTop.reps}` : ''}</span>
       </div>
       <div className="sets">
