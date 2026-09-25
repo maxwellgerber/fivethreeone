@@ -12,7 +12,8 @@
     "serve": "npx --yes serve dist",
     "import-notes": "node --experimental-strip-types tools/import-notes.ts",
     "dev": "npm run build && npx wrangler dev",
-    "deploy": "npm run build && npx wrangler deploy"
+    "deploy": "npm run build:deploy && npx wrangler deploy",
+    "build:deploy": "node build.mjs --seed"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

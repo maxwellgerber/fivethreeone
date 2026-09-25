@@ -74,6 +74,24 @@ function seedWorkouts(): Workout[] {
   }
 }
 
+/**
+ * Fold bundled history into an existing state: adds seed workouts whose id is
+ * neither present nor tombstoned. Idempotent, so every device can apply it.
+ */
+export function mergeSeed(state: AppState, seed: Workout[]): number {
+  if (!seed.length) return 0;
+  const ids = new Set(state.workouts.map((w) => w.id));
+  const dead = state.tombstones ?? {};
+  let added = 0;
+  for (const w of seed) {
+    if (ids.has(w.id) || dead[w.id] !== undefined) continue;
+    state.workouts.push(w);
+    added++;
+  }
+  if (added) sortWorkouts(state.workouts);
+  return added;
+}
+
 export function freshState(): AppState {
   const program = defaultProgram('lb');
   const workouts = seedWorkouts().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -94,7 +112,8 @@ export function freshState(): AppState {
     settings: defaultSettings('lb'),
     assistance: defaultAssistance(),
     onboarded: false,
-    updatedAt: Date.now(),
+    // 0 so a fresh device defers to whatever the account already has on the server.
+    updatedAt: 0,
     tombstones: {},
   };
 }
@@ -125,6 +144,11 @@ export async function loadState(): Promise<AppState> {
       program: { ...fresh.program, ...saved.program },
       workouts: saved.workouts?.length ? saved.workouts : fresh.workouts,
     };
+    // History bundled into this build that this device has not seen yet.
+    if (mergeSeed(state, seedWorkouts()) > 0) {
+      await idbSet(KEY, state);
+      await saveSyncMeta({ ...(await loadSyncMeta()), dirty: true });
+    }
   } else {
     state = freshState();
   }

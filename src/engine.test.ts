@@ -172,10 +172,12 @@ test('joker sets step 5% above the top set with the top set reps', () => {
   assert.equal(jokerSet(cfg, w3, 'squat', 1).weight, 300);
 });
 
-test('jokersAllowed follows the phase flag and PR-set scheme', () => {
+test('jokersAllowed: on for PR-set phases unless turned off', () => {
   const cfg = defaultProgram('lb');
   cfg.phases = simplePhases();
   const pos: Position = { phase: 0, cycle: 0, week: 0, day: 0 };
+  assert.equal(jokersAllowed(cfg, pos), true);
+  cfg.phases[0].jokers = false;
   assert.equal(jokersAllowed(cfg, pos), false);
   cfg.phases[0].jokers = true;
   assert.equal(jokersAllowed(cfg, pos), true);

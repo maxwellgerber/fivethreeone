@@ -140,7 +140,11 @@ function LiftBlock({ entry, ei, active, tm }: { entry: ExerciseEntry; ei: number
         <h2>{LIFT_NAMES[lift]}</h2>
         <span className="tm">TM <b>{fmtW(tm)}</b>{lastTop ? ` · last ${fmtW(lastTop.weight)}×${lastTop.reps}` : ''}</span>
       </div>
-      <div className="sets">{entry.sets.map((s, si) => <SetRow key={si} ei={ei} si={si} set={s} active={active} />)}</div>
+      <div className="sets">
+        {groupSets(entry.sets).map((g) => (g.length === 1
+          ? <SetRow key={g[0]} ei={ei} si={g[0]} set={entry.sets[g[0]]} active={active} />
+          : <GroupRow key={g[0]} ei={ei} indices={g} sets={entry.sets} active={active} />))}
+      </div>
       {offer && (
         <div className="joker-offer">
           <button type="button" className="btn small" data-action="joker-add" onClick={addJoker}>
@@ -150,6 +154,51 @@ function LiftBlock({ entry, ei, active, tm }: { entry: ExerciseEntry; ei: number
         </div>
       )}
     </section>
+  );
+}
+
+/** Consecutive supplemental sets with the same weight and target collapse into one row (e.g. FSL 5×5). */
+function groupSets(sets: LoggedSet[]): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < sets.length; i++) {
+    const s = sets[i];
+    const last = out[out.length - 1];
+    const prev = last ? sets[last[last.length - 1]] : null;
+    if (prev && s.kind === 'supplemental' && prev.kind === 'supplemental' && prev.weight === s.weight && prev.target === s.target) last.push(i);
+    else out.push([i]);
+  }
+  return out;
+}
+
+function GroupRow({ ei, indices, sets, active }: { ei: number; indices: number[]; sets: LoggedSet[]; active: boolean }) {
+  const { state, commit } = useStore();
+  const sheet = useSheet();
+  const after = useAfterSet();
+  const first = sets[indices[0]];
+  const done = indices.filter((i) => sets[i].done && !sets[i].skipped).length;
+  const skipped = indices.filter((i) => sets[i].skipped).length;
+  const nextIdx = indices.find((i) => !sets[i].done);
+  const lastDone = [...indices].reverse().find((i) => sets[i].done);
+  const allDone = nextIdx === undefined;
+  const cls = ['set', 'supplemental', 'group', allDone ? 'done' : '', skipped === indices.length ? 'skipped' : ''].join(' ');
+  const onTap = () => {
+    if (nextIdx !== undefined) {
+      const next = commit((s) => { const t = s.active!.entries[ei].sets[nextIdx]; t.done = true; t.reps = t.target ?? t.reps; t.skipped = false; });
+      after(next.active!.entries[ei], next.active!.entries[ei].sets[nextIdx]);
+    } else if (lastDone !== undefined) {
+      sheet.open(<EditSetSheet ei={ei} si={lastDone} />);
+    }
+  };
+  return (
+    <button type="button" className={cls} data-action="set-tap" disabled={!active} onClick={onTap}>
+      <span className="stripe" />
+      <span>
+        <span className="w">{fmtW(first.weight)}<small>{state.program.units}</small></span>
+        <span className="plates">{plateText(state, first.weight)} &nbsp;<span className="tag">supp {indices.length}×{first.target ?? first.reps ?? ''}</span></span>
+      </span>
+      <span className="reps">{done > 0 || allDone ? <b>{done}</b> : <>{done}</>}<small>/{indices.length}</small></span>
+      <span className="check">{allDone ? '✓' : ''}</span>
+    </button>
   );
 }
 

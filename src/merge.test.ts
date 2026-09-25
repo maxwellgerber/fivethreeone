@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TOMBSTONE_TTL_MS, mergeStates, sameState } from './merge.ts';
+import { mergeSeed } from './store.ts';
 import { defaultAssistance, defaultSettings, type AppState, type Workout } from './model.ts';
 import { defaultProgram } from './engine.ts';
 
@@ -105,4 +106,13 @@ test('tombstones expire after the TTL', () => {
   const local = base({ tombstones: { old, fresh } });
   const m = mergeStates(local, base(), now);
   assert.deepEqual(m.tombstones, { fresh });
+});
+
+test('mergeSeed adds unseen seed workouts, skips known and tombstoned ids, and is idempotent', () => {
+  const seed = [w('imp-1', '2024-01-01'), w('imp-2', '2024-02-01'), w('imp-3', '2024-03-01')];
+  const s = base({ workouts: [w('imp-2', '2024-02-01', { notes: 'edited' }), w('own', '2026-09-01')], tombstones: { 'imp-3': T } });
+  assert.equal(mergeSeed(s, seed), 1);
+  assert.deepEqual(s.workouts.map((x) => x.id), ['own', 'imp-2', 'imp-1']);
+  assert.equal(s.workouts[1].notes, 'edited');
+  assert.equal(mergeSeed(s, seed), 0);
 });

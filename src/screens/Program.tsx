@@ -117,7 +117,7 @@ function DaysCard() {
 function phaseDesc(p: Phase): string {
   if (p.kind === 'seventh') return p.seventh === 'tmTest' ? '70/80/90% ×5, then TM for 3–5 reps' : '70/80/90% ×5';
   const a = p.assistance;
-  return `${p.cycles} cycle${p.cycles > 1 ? 's' : ''} · assistance ${a.push}/${a.pull}/${a.single}${p.jokers ? ' · jokers' : ''}`;
+  return `${p.cycles} cycle${p.cycles > 1 ? 's' : ''} · assistance ${a.push}/${a.pull}/${a.single}${p.mainScheme === 'prSets' && p.jokers !== false ? ' · jokers' : ''}`;
 }
 
 function PhasesCard() {
@@ -195,7 +195,7 @@ function PhaseSheet({ i }: { i: number }) {
               {num(p.assistance.single, (v) => edit((q) => { q.assistance.single = v; }), 5)}
             </span>
           </Field>
-          <Field label="Joker sets allowed"><input type="checkbox" checked={!!p.jokers} onChange={(e) => edit((q) => { q.jokers = e.target.checked; })} /></Field>
+          <Field label="Offer joker sets" hint="after a PR set that hits its target"><input type="checkbox" checked={p.jokers !== false} onChange={(e) => edit((q) => { q.jokers = e.target.checked; })} /></Field>
         </>
       )}
       <div className="actions">

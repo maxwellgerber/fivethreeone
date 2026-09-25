@@ -5,8 +5,8 @@ A 5/3/1 Forever training log that runs as an installable web app on your phone. 
 ## What it does
 
 - Program engine for 5/3/1 Forever: leader/anchor phases, 5s PRO or PR sets, FSL / SSL / BBB supplemental, 7th-week deload or TM test, per-cycle TM increments, warm-ups, rounding, plate math.
-- Joker sets: when a phase allows them and the PR set hits its target, the lift offers a joker set (5% of TM above the top set, same reps), one at a time, with a way to remove it if it was a mistake.
-- Gym logging built for one thumb: tap a set to log it, PR/TM-test sets open a rep stepper with a "reps to beat your best e1RM" hint, a rest timer starts automatically (3:00 main / 1:30 supplemental / 1:00 assistance by default) with sound and vibration, and the screen stays awake.
+- Joker sets: in any PR-set phase (unless turned off on the phase), once the PR set hits its target, the lift offers a joker set (5% of TM above the top set, same reps), one at a time, with a way to remove it if it was a mistake.
+- Gym logging built for one thumb: tap a set to log it (a 5×5 supplemental block is one row you tap five times), PR/TM-test sets open a rep stepper with a "reps to beat your best e1RM" hint, a rest timer starts automatically (3:00 main / 1:30 supplemental / 1:00 assistance by default) with sound and vibration, and the screen stays awake.
 - Assistance tracked against the phase's push / pull / single-leg-core rep targets.
 - History with edit-as-text in the same shorthand as a notebook (`Squat 225x5, 175x5x5`), rep PRs, e1RM chart per lift, weekly tonnage.
 - Import: paste freeform notes (years are inferred from date order) or restore a JSON backup.
@@ -38,11 +38,12 @@ npm install          # react, esbuild, typescript, wrangler
 npm test             # engine, importer and sync-merge tests (node --test)
 npm run typecheck    # app + worker
 npm run build        # -> dist/
-npm run build:seeded # also embeds public-history.json and writes dist/single.html
+npm run build:deploy # embeds public-history.json (what CI deploys)
+npm run build:seeded # same, plus dist/single.html for previews
 npm run serve        # preview on http://localhost:3000
 ```
 
-`tools/import-notes.ts` converts a notes file to the app's JSON:
+History in `public-history.json` is embedded by the deploy build and folded into each device's state on first load (by workout id, skipping anything you have since deleted), then synced like any other change. `tools/import-notes.ts` converts a notes file to that JSON:
 
 ```
 npm run import-notes -- notes.txt public-history.json

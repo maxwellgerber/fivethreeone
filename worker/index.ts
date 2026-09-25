@@ -142,7 +142,7 @@ function loginPage(error = ''): Response {
 <meta name="theme-color" content="#14161b">
 <style>
 :root{color-scheme:dark light}
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#14161b;color:#e8e6df;font:17px/1.4 -apple-system,'Segoe UI',system-ui,sans-serif}
+body{margin:0;min-height:100vh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);display:grid;place-items:center;background:#14161b;color:#e8e6df;font:17px/1.4 -apple-system,'Segoe UI',system-ui,sans-serif}
 @media (prefers-color-scheme:light){body{background:#f3f2ee;color:#1b1d22}}
 form{width:min(360px,90vw);display:flex;flex-direction:column;gap:12px}
 h1{font-size:34px;line-height:1;margin:0 0 6px;text-transform:uppercase;letter-spacing:.01em;font-family:'Arial Narrow','Helvetica Neue',sans-serif}

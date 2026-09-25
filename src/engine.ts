@@ -309,10 +309,10 @@ export function jokerSet(cfg: ProgramConfig, pos: Position, lift: Lift, n: numbe
   };
 }
 
-/** Whether the phase at `pos` allows joker sets. */
+/** Whether the phase at `pos` offers joker sets: any PR-set phase unless explicitly turned off. */
 export function jokersAllowed(cfg: ProgramConfig, pos: Position): boolean {
   const phase = cfg.phases[pos.phase];
-  return !!phase && phase.kind !== 'seventh' && !!phase.jokers && phase.mainScheme === 'prSets';
+  return !!phase && phase.kind !== 'seventh' && phase.mainScheme === 'prSets' && phase.jokers !== false;
 }
 
 export function phaseLabel(p: Phase): string {
