@@ -3,6 +3,7 @@ import { LIFT_NAMES, bumpTms, e1rm, jokerSet, jokersAllowed, nextPosition, planW
 import { sortWorkouts } from '../merge.ts';
 import { todayISO, uid, type AppState, type ExerciseEntry, type LoggedSet, type Workout } from '../model.ts';
 import { bestE1rmPerLift, isRepPr, lastSessionFor } from '../stats.ts';
+import { suggestAssistance, type Suggestion } from '../assist.ts';
 import { fmtDate, fmtW } from '../format.ts';
 import { topSet } from '../workoutText.ts';
 import { useSheet } from '../app/sheet.tsx';
@@ -312,6 +313,48 @@ function EditSetSheet({ ei, si }: { ei: number; si: number }) {
 
 // ---- Assistance ---------------------------------------------------------------
 
+function setLabel(s: LoggedSet): string {
+  return `${s.bodyweight ? 'BW' + (s.weight ? '+' + fmtW(s.weight) : '') : fmtW(s.weight)}×${s.reps ?? '?'}`;
+}
+
+function reasonLabel(s: Suggestion, lifts: Lift[]): string {
+  if (s.reason === 'lastTime') return `last ${s.lastDate ? fmtDate(s.lastDate) : 'time'}${s.last ? ` · ${setLabel(s.last)}` : ''}`;
+  if (s.reason === 'pairs') return `pairs with ${lifts.map((l) => LIFT_NAMES[l]).join(' + ')}${s.last ? ` · last ${setLabel(s.last)}` : ''}`;
+  return `${s.category === 'single' ? 'single leg / core' : s.category} is missing${s.last ? ` · last ${setLabel(s.last)}` : ''}`;
+}
+
+/** Add an assistance exercise to the active workout and open its set sheet. */
+function useAddAssist() {
+  const { commit } = useStore();
+  const sheet = useSheet();
+  return (name: string, category: Category) => {
+    const next = commit((s) => {
+      s.active!.entries.push({ name, category, sets: [] });
+      if (!s.assistance.some((a) => a.name.toLowerCase() === name.toLowerCase()) && category !== 'other') s.assistance.push({ name, category });
+    });
+    sheet.open(<AssistSetSheet ei={next.active!.entries.length - 1} />);
+  };
+}
+
+function Suggestions({ w, lifts }: { w: Workout; lifts: Lift[] }) {
+  const { state } = useStore();
+  const add = useAddAssist();
+  const others = state.workouts.filter((x) => x.id !== w.id);
+  const list = suggestAssistance({ workouts: others, assistance: state.assistance }, lifts, w.entries.filter((e) => !e.lift).map((e) => e.name));
+  if (!list.length) return null;
+  return (
+    <div className="suggest">
+      <div className="eyebrow">Suggested</div>
+      {list.map((s) => (
+        <button key={s.name} type="button" className="suggest-item" data-action="suggest-add" onClick={() => add(s.name, s.category)}>
+          <span><span className="name">{s.name}</span><span className="cat">{s.category}</span><span className="why">{reasonLabel(s, lifts)}</span></span>
+          <span className="plus">+</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AssistanceBlock({ w, targets, active }: { w: Workout; targets: { push: number; pull: number; single: number }; active: boolean }) {
   const { commit } = useStore();
   const sheet = useSheet();
@@ -341,6 +384,7 @@ function AssistanceBlock({ w, targets, active }: { w: Workout; targets: { push: 
             </div>
           </div>
         ))}
+        {active && <Suggestions w={w} lifts={w.entries.filter((e) => e.lift).map((e) => e.lift!)} />}
         {active && <div className="mt"><button type="button" className="btn" data-action="assist-add" onClick={() => sheet.open(<AssistPickSheet />)}>+ Add exercise</button></div>}
       </div>
     </section>
@@ -348,18 +392,12 @@ function AssistanceBlock({ w, targets, active }: { w: Workout; targets: { push: 
 }
 
 function AssistPickSheet() {
-  const { state, commit } = useStore();
+  const { state } = useStore();
   const sheet = useSheet();
   const toast = useToast();
   const [name, setName] = useState('');
   const [cat, setCat] = useState<Category>('push');
-  const add = (n: string, category: Category) => {
-    const next = commit((s) => {
-      s.active!.entries.push({ name: n, category, sets: [] });
-      if (!s.assistance.some((a) => a.name.toLowerCase() === n.toLowerCase()) && category !== 'other') s.assistance.push({ name: n, category });
-    });
-    sheet.open(<AssistSetSheet ei={next.active!.entries.length - 1} />);
-  };
+  const add = useAddAssist();
   return (
     <>
       <h2>Add assistance</h2>

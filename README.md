@@ -7,7 +7,7 @@ A 5/3/1 Forever training log that runs as an installable web app on your phone. 
 - Program engine for 5/3/1 Forever: leader/anchor phases, 5s PRO or PR sets, FSL / SSL / BBB supplemental, 7th-week deload or TM test, per-cycle TM increments, warm-ups, rounding, plate math.
 - Joker sets: in any PR-set phase (unless turned off on the phase), once the PR set hits its target, the lift offers a joker set (5% of TM above the top set, same reps), one at a time, with a way to remove it if it was a mistake.
 - Gym logging built for one thumb: tap a set to log it (a 5×5 supplemental block is one row you tap five times), PR/TM-test sets open a rep stepper with a "reps to beat your best e1RM" hint, a rest timer starts automatically (3:00 main / 1:30 supplemental / 1:00 assistance by default) with sound and vibration, and the screen stays awake.
-- Assistance tracked against the phase's push / pull / single-leg-core rep targets.
+- Assistance tracked against the phase's push / pull / single-leg-core rep targets, with suggestions: what you did last time on this day of the split, then movements that pair with today's main lifts, each prefilled from your most recent set of it.
 - History with edit-as-text in the same shorthand as a notebook (`Squat 225x5, 175x5x5`), rep PRs, e1RM chart per lift, weekly tonnage.
 - Import: paste freeform notes (years are inferred from date order) or restore a JSON backup.
 - Sync: when served by the Worker, every change is pushed to a per-user KV document and pulled on launch and when the app returns to the foreground. Conflicts merge per workout (newest edit wins, deletes are tombstoned); program and settings are last-writer-wins. Status and a "Sync now" link live under Program → Your data.
@@ -22,6 +22,7 @@ src/model.ts         types + defaults
 src/notesImport.ts   freeform notes -> workouts ("Squat 225x5, 175x5x5", years inferred)
 src/workoutText.ts   workouts -> notebook text, summaries
 src/stats.ts         PRs, e1RM series, tonnage
+src/assist.ts        assistance suggestions (last time on this day + pairings for today's lifts)
 src/store.ts         IndexedDB persistence, JSON export/import, seed history
 src/merge.ts         conflict-free merge of two app states (sync); tombstones expire after a year
 src/sync.ts          sync client (pull on boot/foreground, debounced push, 409 -> merge -> retry); createSyncClient(deps) is unit-tested with a fake server
